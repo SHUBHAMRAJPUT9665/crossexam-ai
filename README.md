@@ -1,67 +1,69 @@
-# CrossExam -- Step 1: one agent
+# CrossExam -- Step 2: three small fixes
 
-Step 1 of 8 in the branch-by-branch build. &larr; [Step 0](https://github.com/mayank953/crossexam-project/tree/build/step-0-start) &middot; [Map](https://github.com/mayank953/crossexam-project/tree/build/map) &middot; [Step 2 &rarr;](https://github.com/mayank953/crossexam-project/tree/build/step-2-three-fixes) &middot; [The finished system (main)](https://github.com/mayank953/crossexam-project/tree/main)
+Step 2 of 8 in the branch-by-branch build. &larr; [Step 1](https://github.com/mayank953/crossexam-project/tree/build/step-1-one-agent) &middot; [Map](https://github.com/mayank953/crossexam-project/tree/build/map) &middot; [Step 3 &rarr;](https://github.com/mayank953/crossexam-project/tree/build/step-3-plain-code) &middot; [The finished system (main)](https://github.com/mayank953/crossexam-project/tree/main)
 
 ## Why this step exists
 
-Tomás, at Kaveri's Accounts Payable desk, types every invoice in by hand. The simplest thing that could possibly help: give a model one paper and a form, and see what it returns. No queue, no database, no checks, no screen.
+[Step 1](https://github.com/mayank953/crossexam-project/tree/build/step-1-one-agent) got other papers the wrong form, and running it twice did all the work again, at the same cost, with nothing saved. Three small fixes answer this -- **no new part, no new technology**, just a little more code around the same one agent.
 
 ## What this step adds
 
-- `ladder/step1_one_agent.py` -- about **65 lines**.
-- A four-field **form** (`Invoice`): `supplier_name`, `invoice_number`, `po_number`, `total`. Whatever the model returns must fit this shape.
-- One **agent**: a model with no tools, built with LangChain's `create_agent`, that must answer with the form.
-- `read_file`: turns a file into text if the PDF has real text, or a picture if it does not.
+- `ladder/step2_three_small_fixes.py` -- builds directly on step 1's `step1_one_agent.py`.
+- **A kind of paper first**: a tiny form (`Kind`) that only says `invoice`, `shipping`, `certificate` or `other`.
+- **A form per kind**: each kind gets the fields that actually apply to it (`Shipping` has `vehicle_number`; `Certificate` has `batch_number`, `expiry_date`, `result`).
+- **A fingerprint for every file**: SHA-256 of the bytes. A fingerprint seen before is returned from the saved row, with no model call.
+- **Saved as it arrives**: one line appended to `ladder/results.jsonl` the moment an answer exists, not at the end of the run.
 
 ## Where this sits
 
 ```mermaid
 graph LR
     MAP[Map] --> S0[Step 0]
-    S0 --> S1["Step 1<br/>(you are here)"]
-    S1 --> S2[Step 2<br/>Three small fixes]
+    S0 --> S1[Step 1<br/>One agent]
+    S1 --> S2["Step 2<br/>(you are here)"]
     S2 --> S3[Step 3<br/>Plain code]
     S3 -.-> S4[Step 4] -.-> S5[Step 5] -.-> S6[Step 6] -.-> S7[Step 7] -.-> S8[Step 8]
-    style S1 fill:#2459A6,stroke:#173F78,color:#fff
+    style S2 fill:#2459A6,stroke:#173F78,color:#fff
 ```
 
 ## What happens inside this step
 
 ```mermaid
-flowchart LR
-    F[One paper] --> RF["read_file<br/>text, or a picture if it is a scan"]
-    RF --> A["The agent<br/>create_agent, no tools"]
-    A <--> M[(Gemini)]
-    A --> R["The Invoice form<br/>4 fields"]
+flowchart TD
+    F[One paper] --> H[SHA-256 fingerprint of the bytes]
+    H --> D{Seen before?}
+    D -- yes --> SV["Return the saved row<br/>no model call, no cost"]
+    D -- no --> K["Ask: what kind of paper is this?"]
+    K <--> M1[(Gemini)]
+    K --> FM["Fill the matching form<br/>invoice / shipping / certificate"]
+    FM <--> M2[(Gemini)]
+    FM --> APP["Append one line to<br/>ladder/results.jsonl"]
 ```
 
 ## Requirements
 
-- **Docker Desktop**, running.
-- **A Gemini key**, in `.env` (`make setup` on [step 0](https://github.com/mayank953/crossexam-project/tree/build/step-0-start) creates the file; paste your key in).
-- **About 9 seconds of model time for nine files**, roughly **US$0.003** in total (under a rupee) -- measured on a real run.
+- **Docker Desktop**, running, and a **Gemini key** in `.env` (same as step 1).
+- **The first run of nine files**: about 17 seconds, two model calls per file. **The second run of the same files**: about 3.5 seconds, every line says `skipped`, no model call at all.
 
 ## Run it
 
 ```bash
-./run.sh ladder/step1_one_agent.py demo-data/files/0002_bundle_scan.pdf
+rm -f ladder/results.jsonl
+./run.sh ladder/step2_three_small_fixes.py demo-data/files/0002_* demo-data/files/0010_*
+./run.sh ladder/step2_three_small_fixes.py demo-data/files/0002_* demo-data/files/0010_*   # again: free
 ```
-Or on all nine files of the two shipments this course follows:
-```bash
-./run.sh ladder/step1_one_agent.py $(ls demo-data/files/0002_* demo-data/files/0010_*)
+A real run shows the fix working, and one thing still wrong:
 ```
-A real run reads the invoice of PO-40002 exactly right:
-```
-0002_bundle_scan.pdf     supplier_name='Deccan Hygiene Industries' invoice_number='SI/26-27/56132'
-po_number='PO-40002' total=700010.85   (2.0 s)
+0002_bundle_scan.pdf     other        {}
+0010_einvoice.json       invoice      {'supplier_name': 'Tungabhadra Detergents Ltd', ...}
 ```
 
-## What it gets wrong
+## What it still gets wrong
 
-The same agent is asked for an **invoice** form on every paper, including an e-way bill and a lorry receipt, which are not invoices. Their fields come back empty or wrong, and nothing is saved -- run it twice and you pay twice. That is exactly what [step 2](https://github.com/mayank953/crossexam-project/tree/build/step-2-three-fixes) fixes, with no new part.
+`0002_bundle_scan.pdf` is **three papers in one scanned file** -- an invoice, a packing list, a lorry receipt -- but this step gives it one kind and one form. One lorry is also written two different ways across two papers (`KL19KI5987` and `KL19 KI 5987`), and nothing here compares the invoice's price with the purchase order. [Step 3](https://github.com/mayank953/crossexam-project/tree/build/step-3-plain-code) answers all three with plain code, no new technology.
 
 ## Go deeper
 
-The full walkthrough -- the real nine-line output, what to notice, the doubts people raise -- is in [`STEP.md`](STEP.md).
+The full walkthrough, plus an interactive look at how the fingerprint behaves on a changed file, is in [`STEP.md`](STEP.md).
 
-Next: `git switch build/step-2-three-fixes`
+Next: `git switch build/step-3-plain-code`
